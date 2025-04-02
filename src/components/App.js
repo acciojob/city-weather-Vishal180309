@@ -1,50 +1,114 @@
-// Import required libraries
-import axios from 'axios';
+// Importing required modules
+const http = require("http");
+const https = require("https");
+const url = require("url");
+const querystring = require("querystring");
 
-// Get API key from OpenWeatherMap
-const API_KEY = 'YOUR_API_KEY_HERE';
+// Replace with your OpenWeatherMap API key
+const API_KEY = "your_api_key_here";
 
-// Function to get weather data from OpenWeatherMap API
-async function getWeatherData(query) {
-  try {
-    const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${query}&appid=${API_KEY}&units=metric`);
-    return response.data;
-  } catch (error) {
-    console.error(error);
-  }
-}
+// HTML for the front-end
+const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>City Weather</title>
+    <style>
+        .container {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: auto;
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+        .search {
+            margin-bottom: 1rem;
+        }
+        .weather {
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>City Weather</h1>
+        <input class="search" id="cityInput" type="text" placeholder="Enter city name" />
+        <button onclick="getWeather()">Get Weather</button>
+        <div class="weather" id="weatherOutput"></div>
+    </div>
+    <script>
+        function getWeather() {
+            const city = document.getElementById('cityInput').value;
+            fetch(\`http://localhost:3000/weather?city=\${city}\`)
+                .then(response => response.json())
+                .then(data => {
+                    const weatherOutput = document.getElementById('weatherOutput');
+                    if (data.error) {
+                        weatherOutput.innerHTML = \`<p>\${data.error}</p>\`;
+                    } else {
+                        weatherOutput.innerHTML = \`
+                            <h2>Weather in \${data.city}</h2>
+                            <p>Temperature: \${data.temperature}°C</p>
+                            <p>Description: \${data.description}</p>
+                            <img src="http://openweathermap.org/img/wn/\${data.icon}@2x.png" alt="Weather Icon" />
+                        \`;
+                    }
+                });
+        }
+    </script>
+</body>
+</html>
+`;
 
-// Function to display weather data
-function displayWeatherData(data) {
-  const weatherIcon = data.weather[0].icon;
-  const temperature = data.main.temp;
-  const weatherDescription = data.weather[0].description;
+// Create HTTP server
+const server = http.createServer((req, res) => {
+    const parsedUrl = url.parse(req.url);
+    const query = querystring.parse(parsedUrl.query);
 
-  const weatherDiv = document.querySelector('.weather');
-  const html = `
-    <h2>${data.name}</h2>
-    <i class="wi wi-owm-${weatherIcon} weather-icon"></i>
-    <p>Temperature: ${temperature}°C</p>
-    <p>Weather: ${weatherDescription}</p>
-  `;
+    if (parsedUrl.pathname === "/weather" && req.method === "GET") {
+        const city = query.city;
+        if (!city) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "City name is required" }));
+        } else {
+            const apiUrl = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric`;
+            https.get(apiUrl, (apiRes) => {
+                let data = "";
+                apiRes.on("data", (chunk) => {
+                    data += chunk;
+                });
+                apiRes.on("end", () => {
+                    const weatherData = JSON.parse(data);
+                    if (weatherData.cod === 200) {
+                        res.writeHead(200, { "Content-Type": "application/json" });
+                        res.end(
+                            JSON.stringify({
+                                city: weatherData.name,
+                                temperature: weatherData.main.temp,
+                                description: weatherData.weather[0].description,
+                                icon: weatherData.weather[0].icon,
+                            })
+                        );
+                    } else {
+                        res.writeHead(400, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({ error: weatherData.message }));
+                    }
+                });
+            }).on("error", (err) => {
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Failed to fetch weather data" }));
+            });
+        }
+    } else {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(htmlContent);
+    }
+});
 
-  weatherDiv.innerHTML = html;
-}
-
-// Function to handle search input
-function handleSearchInput() {
-  const searchInput = document.querySelector('.search');
-  const query = searchInput.value.trim();
-
-  if (query) {
-    getWeatherData(query).then(data => displayWeatherData(data));
-  } else {
-    alert('Please enter a city name!');
-  }
-}
-
-// Add event listener to search button
-document.addEventListener('DOMContentLoaded', () => {
-  const searchButton = document.querySelector('.search-button');
-  searchButton.addEventListener('click', handleSearchInput);
+// Start the server
+server.listen(3000, () => {
+    console.log("Server is running on http://localhost:3000");
 });
